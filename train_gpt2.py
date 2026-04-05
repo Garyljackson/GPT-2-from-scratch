@@ -108,3 +108,18 @@ print(f"  Input tokens [0:5]:  {x[:5].tolist()}")
 print(f"  Target tokens [0:5]: {y[:5].tolist()}")
 print(f"  Input text:  '{encoder.decode(x[:20].tolist())}'")
 print(f"  Target text: '{encoder.decode(y[:20].tolist())}'")
+
+# ============================================================
+# STEP 4: Define the model configuration
+# ============================================================
+# These hyperparameters define the size of GPT-2 (124M version).
+# The only change from the real GPT-2 is block_size: we use 128
+# instead of 1024 to match our shorter context length.
+
+@dataclass
+class GPTConfig:
+    block_size: int = 128    # Maximum sequence length
+    vocab_size: int = 50257  # Number of tokens in GPT-2's vocabulary
+    n_layer: int = 12        # Number of transformer blocks (depth)
+    n_head: int = 12         # Number of attention heads (width)
+    n_embd: int = 768        # Embedding dimension
