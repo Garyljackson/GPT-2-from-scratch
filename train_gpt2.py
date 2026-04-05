@@ -433,3 +433,56 @@ num_params = sum(p.numel() for p in model.parameters())
 print(f"Model parameters: {num_params:,}")
 
 generate(model, "Hello, I'm a language model,", device=device)
+
+# ============================================================
+# STEP 12: Train the model
+# ============================================================
+print("\n--- Training ---")
+
+# First, check the initial loss (should be close to random baseline)
+model.train()
+x_batch, y_batch = next(iter(train_loader))
+x_batch, y_batch = x_batch.to(device), y_batch.to(device)
+logits, loss = model(x_batch, targets=y_batch)
+
+random_baseline = -torch.log(torch.tensor(1.0 / 50257)).item()
+print(f"Initial loss:         {loss.item():.4f}")
+print(f"Random baseline loss: {random_baseline:.4f}")
+print(f"(These should be close — confirms our pipeline is correct)")
+
+# Set up the optimizer
+# AdamW is Adam with proper weight decay (standard for transformers)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+
+# Training loop: 50 epochs over our small dataset
+print(f"\nStarting training for 50 epochs...")
+for epoch in range(50):
+    model.train()
+    epoch_loss = 0.0
+    num_batches = 0
+
+    for x_batch, y_batch in train_loader:
+        x_batch = x_batch.to(device)
+        y_batch = y_batch.to(device)
+
+        # Forward pass
+        logits, loss = model(x_batch, y_batch)
+
+        # Backward pass
+        optimizer.zero_grad()   # Clear old gradients
+        loss.backward()         # Compute new gradients
+
+        # Gradient clipping: prevent exploding gradients
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+        # Update weights
+        optimizer.step()
+
+        epoch_loss += loss.item()
+        num_batches += 1
+
+    avg_loss = epoch_loss / num_batches
+    if epoch % 5 == 0 or epoch == 49:
+        print(f"  Epoch {epoch:3d} | Average loss: {avg_loss:.4f}")
+
+print("Training complete!")
