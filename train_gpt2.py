@@ -244,3 +244,79 @@ class Block(nn.Module):
         x = x + self.mlp(self.ln_2(x))
 
         return x
+
+# ============================================================
+# STEP 8: The Full GPT Model
+# ============================================================
+# The complete architecture:
+#   1. Token embeddings (vocab -> vectors)
+#   2. Position embeddings (position -> vectors)
+#   3. 12 transformer blocks
+#   4. Final layer norm
+#   5. Language model head (vectors -> vocab probabilities)
+
+class GPT(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.transformer = nn.ModuleDict(dict(
+            # Token embedding: each of the 50,257 tokens gets a 768-dim vector
+            wte = nn.Embedding(config.vocab_size, config.n_embd),
+
+            # Position embedding: each of the 128 positions gets a 768-dim vector
+            wpe = nn.Embedding(config.block_size, config.n_embd),
+
+            # The stack of 12 transformer blocks
+            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+
+            # Final layer normalization (added by GPT-2, not in original transformer)
+            ln_f = nn.LayerNorm(config.n_embd),
+        ))
+
+        # Language model head: projects from 768 dims back to 50,257 vocab size
+        # We create it as a proper Linear layer (needed for weight loading)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
+        # Weight tying: the output projection shares weights with the input embedding.
+        # This means the model uses the SAME matrix to:
+        #   - convert token IDs to vectors (input)
+        #   - convert vectors back to token probabilities (output)
+        # This reduces parameters and acts as a regularizer.
+        self.lm_head.weight = self.transformer.wte.weight
+
+    def forward(self, idx, targets=None):
+        B, T = idx.size()
+        assert T <= self.config.block_size, \
+            f"Sequence length {T} exceeds block size {self.config.block_size}"
+
+        # Create position indices: [0, 1, 2, ..., T-1]
+        pos = torch.arange(0, T, dtype=torch.long, device=idx.device)
+
+        # Look up embeddings
+        tok_emb = self.transformer.wte(idx)   # [B, T, 768] — token content
+        pos_emb = self.transformer.wpe(pos)   # [T, 768] — position info (broadcasts)
+
+        # Combine token and position information
+        x = tok_emb + pos_emb
+
+        # Pass through all 12 transformer blocks
+        for block in self.transformer.h:
+            x = block(x)
+
+        # Final layer norm
+        x = self.transformer.ln_f(x)
+
+        # Project to vocabulary size to get next-token predictions
+        logits = self.lm_head(x)  # [B, T, 50257]
+
+        # Compute loss if we have targets (during training)
+        loss = None
+        if targets is not None:
+            # Flatten for cross_entropy: it expects (N, C) and (N,)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),  # [B*T, 50257]
+                targets.view(-1)                    # [B*T]
+            )
+
+        return logits, loss
