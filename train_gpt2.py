@@ -146,3 +146,74 @@ class MLP(nn.Module):
         x = self.gelu(x)       # Non-linear activation
         x = self.c_proj(x)     # Compress back down
         return x
+
+# ============================================================
+# STEP 6: Causal Self-Attention
+# ============================================================
+# This is where tokens "look at" each other to build context.
+# "Causal" means each token can only attend to tokens that came
+# BEFORE it (not future tokens). This is enforced by the mask.
+#
+# Multi-head attention splits the 768-dim embedding into 12 heads
+# of 64 dimensions each. Each head learns a different "type" of
+# relationship (e.g., one head might track syntax, another semantics).
+
+class CausalSelfAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        assert config.n_embd % config.n_head == 0, \
+            f"Embedding dim {config.n_embd} must be divisible by n_head {config.n_head}"
+
+        # Combined Q, K, V projection (more efficient than three separate layers)
+        # Input: 768 -> Output: 2304 (which gets split into three 768-dim tensors)
+        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd)
+
+        # Output projection: combines all heads back together
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd)
+
+        self.n_head = config.n_head
+        self.n_embd = config.n_embd
+
+        # Causal mask: a lower-triangular matrix of ones
+        # Position i can only attend to positions 0..i (not future positions)
+        # register_buffer means this is saved with the model but NOT trained
+        self.register_buffer(
+            "bias",
+            torch.tril(torch.ones(config.block_size, config.block_size))
+            .view(1, 1, config.block_size, config.block_size)
+        )
+
+    def forward(self, x):
+        B, T, C = x.size()  # Batch, sequence length (Time), embedding dim (Channels)
+
+        # Compute Q, K, V all at once, then split
+        qkv = self.c_attn(x)                          # [B, T, 2304]
+        q, k, v = qkv.split(self.n_embd, dim=2)       # 3x [B, T, 768]
+
+        # Reshape into multiple heads: [B, T, 768] -> [B, 12, T, 64]
+        # Each head gets 64 dimensions to work with
+        head_dim = C // self.n_head
+        k = k.view(B, T, self.n_head, head_dim).transpose(1, 2)  # [B, 12, T, 64]
+        q = q.view(B, T, self.n_head, head_dim).transpose(1, 2)  # [B, 12, T, 64]
+        v = v.view(B, T, self.n_head, head_dim).transpose(1, 2)  # [B, 12, T, 64]
+
+        # Compute attention scores: how much should each token attend to each other?
+        # q @ k^T gives a [T, T] matrix of attention scores per head
+        att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        # Shape: [B, 12, T, 64] @ [B, 12, 64, T] = [B, 12, T, T]
+
+        # Apply causal mask: future positions get -inf, which softmax turns into 0
+        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float('-inf'))
+
+        # Normalize to probabilities (each row sums to 1)
+        att = F.softmax(att, dim=-1)
+
+        # Weighted sum of values based on attention probabilities
+        y = att @ v  # [B, 12, T, T] @ [B, 12, T, 64] = [B, 12, T, 64]
+
+        # Reassemble all heads: [B, 12, T, 64] -> [B, T, 768]
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
+
+        # Final projection to let heads interact
+        y = self.c_proj(y)
+        return y
