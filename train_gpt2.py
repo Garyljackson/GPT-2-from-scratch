@@ -417,3 +417,19 @@ def generate(model, prompt, max_length=30, num_sequences=5, device='cpu'):
     for i in range(num_sequences):
         decoded = encoder.decode(x[i, :max_length].tolist())
         print(f"  > {decoded}")
+
+# ============================================================
+# STEP 11: See what an untrained model produces (should be gibberish)
+# ============================================================
+print("\n--- Untrained Model Output ---")
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print(f"Using device: {device}")
+
+config = GPTConfig()
+model = GPT(config)
+model = model.to(device)
+
+num_params = sum(p.numel() for p in model.parameters())
+print(f"Model parameters: {num_params:,}")
+
+generate(model, "Hello, I'm a language model,", device=device)
