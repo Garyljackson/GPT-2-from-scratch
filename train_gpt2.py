@@ -123,3 +123,26 @@ class GPTConfig:
     n_layer: int = 12        # Number of transformer blocks (depth)
     n_head: int = 12         # Number of attention heads (width)
     n_embd: int = 768        # Embedding dimension
+
+# ============================================================
+# STEP 5: The MLP (Feed-Forward Network)
+# ============================================================
+# Each transformer block contains an MLP that processes each token
+# independently. It expands the representation to 4x the embedding
+# dimension, applies a non-linearity (GELU), then projects back down.
+#
+# Think of it as: the attention layer figures out WHICH tokens matter,
+# and the MLP figures out WHAT to do with that information.
+
+class MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.c_fc   = nn.Linear(config.n_embd, 4 * config.n_embd)  # 768 -> 3072
+        self.gelu   = nn.GELU(approximate='tanh')
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd)  # 3072 -> 768
+
+    def forward(self, x):
+        x = self.c_fc(x)       # Expand to higher dimension
+        x = self.gelu(x)       # Non-linear activation
+        x = self.c_proj(x)     # Compress back down
+        return x
