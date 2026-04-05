@@ -217,7 +217,7 @@ class CausalSelfAttention(nn.Module):
         # Final projection to let heads interact
         y = self.c_proj(y)
         return y
-    
+
 # ============================================================
 # STEP 7: The Transformer Block
 # ============================================================
@@ -262,28 +262,28 @@ class GPT(nn.Module):
 
         self.transformer = nn.ModuleDict(dict(
             # Token embedding: each of the 50,257 tokens gets a 768-dim vector
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
+            wte  = nn.Embedding(config.vocab_size, config.n_embd),
 
             # Position embedding: each of the 128 positions gets a 768-dim vector
-            wpe = nn.Embedding(config.block_size, config.n_embd),
+            wpe  = nn.Embedding(config.block_size, config.n_embd),
 
             # The stack of 12 transformer blocks
-            h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
+            h    = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
 
             # Final layer normalization (added by GPT-2, not in original transformer)
             ln_f = nn.LayerNorm(config.n_embd),
         ))
 
-        # Language model head: projects from 768 dims back to 50,257 vocab size
-        # We create it as a proper Linear layer (needed for weight loading)
+        # Language model head: projects from 768 dims back to 50,257 vocab size.
+        #
+        # Note: The real GPT-2 ties this weight with the token embedding (wte),
+        # meaning it uses the SAME matrix to convert token IDs to vectors (input)
+        # and to convert vectors back to token probabilities (output). However,
+        # weight tying requires careful initialization (std=0.02 for all weights,
+        # plus scaling residual projections by 1/sqrt(2*n_layer)). Without that
+        # initialization, the embedding's large default values cause exploding
+        # logits. We use a separate layer here to keep things simple.
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
-
-        # Weight tying: the output projection shares weights with the input embedding.
-        # This means the model uses the SAME matrix to:
-        #   - convert token IDs to vectors (input)
-        #   - convert vectors back to token probabilities (output)
-        # This reduces parameters and acts as a regularizer.
-        self.lm_head.weight = self.transformer.wte.weight
 
     def forward(self, idx, targets=None):
         B, T = idx.size()
@@ -395,10 +395,8 @@ def generate(model, prompt, max_length=30, num_sequences=5, device='cpu'):
     tokens = tokens.unsqueeze(0).repeat(num_sequences, 1)  # [num_sequences, prompt_len]
     x = tokens.to(device)
 
-    torch.manual_seed(42)
-    if device == 'cuda':
-        torch.cuda.manual_seed(42)
-
+    # No fixed seed — each sequence samples independently,
+    # producing different completions from the same prompt.
     with torch.no_grad():
         while x.size(1) < max_length:
             logits, _ = model(x)
@@ -497,11 +495,13 @@ generate(model, "Hello, I'm a language model,", device=device)
 # ============================================================
 # STEP 14: Save the trained model
 # ============================================================
-from safetensors.torch import save_file
+from safetensors.torch import save_model
 
 print("\nSaving model...")
+
 # Save with SafeTensors (modern, secure format)
-save_file(model.state_dict(), "gpt2_tiny.safetensors")
+# Using save_model instead of save_file to handle any shared tensor memory
+save_model(model, "gpt2_tiny.safetensors")
 print("Model saved to gpt2_tiny.safetensors")
 
 # Also save with PyTorch's native format (for comparison)
