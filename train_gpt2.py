@@ -486,3 +486,24 @@ for epoch in range(50):
         print(f"  Epoch {epoch:3d} | Average loss: {avg_loss:.4f}")
 
 print("Training complete!")
+
+# ============================================================
+# STEP 13: Test the trained model
+# ============================================================
+print("\n--- Trained Model Output ---")
+generate(model, "Once upon a time", device=device)
+generate(model, "Hello, I'm a language model,", device=device)
+
+# ============================================================
+# STEP 14: Save the trained model
+# ============================================================
+from safetensors.torch import save_file
+
+print("\nSaving model...")
+# Save with SafeTensors (modern, secure format)
+save_file(model.state_dict(), "gpt2_tiny.safetensors")
+print("Model saved to gpt2_tiny.safetensors")
+
+# Also save with PyTorch's native format (for comparison)
+torch.save(model.state_dict(), "gpt2_tiny.pth")
+print("Model also saved to gpt2_tiny.pth")
