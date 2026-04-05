@@ -383,3 +383,37 @@ model_verify = GPT.from_pretrained('gpt2')
 print("SUCCESS! Our architecture matches OpenAI's GPT-2 exactly.")
 del model_verify  # Free memory — we'll create a fresh model for training
 
+# ============================================================
+# STEP 10: Text generation function
+# ============================================================
+def generate(model, prompt, max_length=30, num_sequences=5, device='cpu'):
+    """Generate text from a prompt using top-k sampling."""
+    model.eval()
+
+    tokens = encoder.encode(prompt)
+    tokens = torch.tensor(tokens, dtype=torch.long)
+    tokens = tokens.unsqueeze(0).repeat(num_sequences, 1)  # [num_sequences, prompt_len]
+    x = tokens.to(device)
+
+    torch.manual_seed(42)
+    if device == 'cuda':
+        torch.cuda.manual_seed(42)
+
+    with torch.no_grad():
+        while x.size(1) < max_length:
+            logits, _ = model(x)
+            # Take logits for the LAST token position only
+            logits = logits[:, -1, :]  # [num_sequences, vocab_size]
+            probs = F.softmax(logits, dim=-1)
+            # Top-k sampling: only consider the 50 most likely next tokens
+            topk_probs, topk_indices = torch.topk(probs, 50, dim=-1)
+            # Sample from these top 50
+            ix = torch.multinomial(topk_probs, 1)
+            # Map back to actual token IDs
+            xcol = torch.gather(topk_indices, -1, ix)
+            x = torch.cat((x, xcol), dim=1)
+
+    print(f"\nGenerated text (prompt: '{prompt}'):")
+    for i in range(num_sequences):
+        decoded = encoder.decode(x[i, :max_length].tolist())
+        print(f"  > {decoded}")
