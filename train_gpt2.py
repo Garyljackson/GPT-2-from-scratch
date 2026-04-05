@@ -217,3 +217,30 @@ class CausalSelfAttention(nn.Module):
         # Final projection to let heads interact
         y = self.c_proj(y)
         return y
+    
+# ============================================================
+# STEP 7: The Transformer Block
+# ============================================================
+# A block is: LayerNorm -> Attention -> Residual -> LayerNorm -> MLP -> Residual
+#
+# GPT-2 uses "Pre-Norm" (normalize BEFORE the sub-layer), which is
+# different from the original transformer paper (which normalizes after).
+# Pre-Norm makes deep networks easier to train.
+
+class Block(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(config.n_embd)    # Norm before attention
+        self.attn  = CausalSelfAttention(config)
+        self.ln_2 = nn.LayerNorm(config.n_embd)    # Norm before MLP
+        self.mlp   = MLP(config)
+
+    def forward(self, x):
+        # Attention with residual connection
+        # The "+ x" is the residual: it lets gradients flow directly through
+        x = x + self.attn(self.ln_1(x))
+
+        # MLP with residual connection
+        x = x + self.mlp(self.ln_2(x))
+
+        return x
